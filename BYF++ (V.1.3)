@@ -2,23 +2,17 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- Configuration settings
-local MAX_WALK_SPEED = 20 -- Default Roblox walk speed
-local MAX_JUMP_HEIGHT = 7.2 -- Default Roblox jump height
-local MAX_DISTANCE_PER_FRAME = 50 -- Max distance a player can move per frame (for speed/teleport check)
-local NOCLIP_CHECK_INTERVAL = 1 -- Seconds between noclip checks
-local MIN_Y_VELOCITY_FOR_JUMP = 20 -- Minimum Y velocity to consider a jump
-local MAX_FALL_DISTANCE = 100 -- Max distance a player can fall without taking damage (for fall damage bypass)
+
+local MAX_WALK_SPEED = 20 
+local MAX_JUMP_HEIGHT = 7.2 
+local MAX_DISTANCE_PER_FRAME = 50 
+local NOCLIP_CHECK_INTERVAL = 1 
+local MIN_Y_VELOCITY_FOR_JUMP = 20 
+local MAX_FALL_DISTANCE = 100 
 
 
--- local antiCheatEvent = Instance.new("RemoteEvent")
--- antiCheatEvent.Name = "AntiCheatEvent"
--- antiCheatEvent.Parent = ReplicatedStorage
-
--- Store player data for checks
 local playerData = {}
 
--- Function to initialize player data
 local function initializePlayerData(player)
     playerData[player.UserId] = {
         lastPosition = nil,
@@ -29,22 +23,18 @@ local function initializePlayerData(player)
     }
 end
 
--- Function to clean up player data
 local function cleanupPlayerData(player)
     playerData[player.UserId] = nil
 end
 
--- Connect to player added/removed events
 Players.PlayerAdded:Connect(initializePlayerData)
 Players.PlayerRemoving:Connect(cleanupPlayerData)
 
--- Function to kick a player with a reason
 local function kickPlayer(player, reason)
     player:Kick("Anti-Cheat Violation: " .. reason)
     warn(player.Name .. " was kicked for: " .. reason)
 end
 
--- Core Anti-Cheat Loop 
 RunService.Heartbeat:Connect(function(deltaTime)
     for _, player in ipairs(Players:GetPlayers()) do
         local character = player.Character
@@ -54,14 +44,12 @@ RunService.Heartbeat:Connect(function(deltaTime)
             local currentPosition = rootPart.Position
             local userId = player.UserId
 
-            -- Initialize data if somehow not present (should be handled by PlayerAdded)
             if not playerData[userId] then
                 initializePlayerData(player)
             end
 
             local data = playerData[userId]
 
-            -- Speed/Teleport Check
             if data.lastPosition then
                 local distanceMoved = (currentPosition - data.lastPosition).Magnitude
                 if distanceMoved / deltaTime > MAX_DISTANCE_PER_FRAME then
@@ -78,7 +66,6 @@ RunService.Heartbeat:Connect(function(deltaTime)
             end
             data.lastPosition = currentPosition
 
-            -- Noclip Check
             if tick() - data.lastNoclipCheckTime >= NOCLIP_CHECK_INTERVAL then
                 local rayOrigin = rootPart.Position
                 local rayDirection = Vector3.new(0, -1, 0) * (humanoid.HipHeight + 1) -- Check slightly below character
@@ -106,9 +93,8 @@ RunService.Heartbeat:Connect(function(deltaTime)
                 data.lastNoclipCheckTime = tick()
             end
 
-            -- Jump Height Check (basic)
+            
             if humanoid.FloorMaterial == Enum.Material.Air and rootPart.AssemblyLinearVelocity.Y > MIN_Y_VELOCITY_FOR_JUMP then
-                -- Player is in the air and moving upwards significantly
                 if tick() - data.lastJumpTime > 0.5 then
                     
                 end
@@ -131,7 +117,7 @@ RunService.Heartbeat:Connect(function(deltaTime)
                 end
             end
 
-            -- Humanoid properties check (Speed/JumpPower)
+      
            
             if humanoid.WalkSpeed > MAX_WALK_SPEED + 0.1 then -- Add a small tolerance
                 humanoid.WalkSpeed = MAX_WALK_SPEED
@@ -146,5 +132,3 @@ RunService.Heartbeat:Connect(function(deltaTime)
         end
     end
 end)
-
-print("Basic Anti-Cheat Script Loaded.")
