@@ -1,0 +1,150 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Configuration settings
+local MAX_WALK_SPEED = 20 -- Default Roblox walk speed
+local MAX_JUMP_HEIGHT = 7.2 -- Default Roblox jump height
+local MAX_DISTANCE_PER_FRAME = 50 -- Max distance a player can move per frame (for speed/teleport check)
+local NOCLIP_CHECK_INTERVAL = 1 -- Seconds between noclip checks
+local MIN_Y_VELOCITY_FOR_JUMP = 20 -- Minimum Y velocity to consider a jump
+local MAX_FALL_DISTANCE = 100 -- Max distance a player can fall without taking damage (for fall damage bypass)
+
+
+-- local antiCheatEvent = Instance.new("RemoteEvent")
+-- antiCheatEvent.Name = "AntiCheatEvent"
+-- antiCheatEvent.Parent = ReplicatedStorage
+
+-- Store player data for checks
+local playerData = {}
+
+-- Function to initialize player data
+local function initializePlayerData(player)
+    playerData[player.UserId] = {
+        lastPosition = nil,
+        lastNoclipCheckTime = tick(),
+        lastJumpTime = tick(),
+        lastFallCheckPosition = nil,
+        isFalling = false
+    }
+end
+
+-- Function to clean up player data
+local function cleanupPlayerData(player)
+    playerData[player.UserId] = nil
+end
+
+-- Connect to player added/removed events
+Players.PlayerAdded:Connect(initializePlayerData)
+Players.PlayerRemoving:Connect(cleanupPlayerData)
+
+-- Function to kick a player with a reason
+local function kickPlayer(player, reason)
+    player:Kick("Anti-Cheat Violation: " .. reason)
+    warn(player.Name .. " was kicked for: " .. reason)
+end
+
+-- Core Anti-Cheat Loop 
+RunService.Heartbeat:Connect(function(deltaTime)
+    for _, player in ipairs(Players:GetPlayers()) do
+        local character = player.Character
+        if character and character:FindFirstChild("Humanoid") and character:FindFirstChild("HumanoidRootPart") then
+            local humanoid = character.Humanoid
+            local rootPart = character.HumanoidRootPart
+            local currentPosition = rootPart.Position
+            local userId = player.UserId
+
+            -- Initialize data if somehow not present (should be handled by PlayerAdded)
+            if not playerData[userId] then
+                initializePlayerData(player)
+            end
+
+            local data = playerData[userId]
+
+            -- Speed/Teleport Check
+            if data.lastPosition then
+                local distanceMoved = (currentPosition - data.lastPosition).Magnitude
+                if distanceMoved / deltaTime > MAX_DISTANCE_PER_FRAME then
+                    -- Allow for large movements if teleporting legitimately (e.g., spawn, admin teleport)
+                    -- This is a very basic check. More advanced checks would involve raycasting or server-side position tracking.
+                    if humanoid.MoveDirection.Magnitude > 0 or humanoid.Jump then -- Only check if player is actively moving
+                        -- Consider adding a debounce or more sophisticated check here
+                        -- kickPlayer(player, "Speed/Teleport Hack Detected")
+                        warn(player.Name .. " potentially speed/teleport hacking. Distance: " .. tostring(distanceMoved) .. " per frame.")
+                        -- For now, just warn. Kicking immediately for this can lead to false positives.
+                        -- A better approach is to check for consistent high speeds over time.
+                    end
+                end
+            end
+            data.lastPosition = currentPosition
+
+            -- Noclip Check
+            if tick() - data.lastNoclipCheckTime >= NOCLIP_CHECK_INTERVAL then
+                local rayOrigin = rootPart.Position
+                local rayDirection = Vector3.new(0, -1, 0) * (humanoid.HipHeight + 1) -- Check slightly below character
+                local raycastParams = RaycastParams.new()
+                raycastParams.FilterDescendantsInstances = {character}
+                raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+
+                local result = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+
+                if not result then
+                    local partsInArea = workspace:GetPartsInPart(rootPart)
+                    local isCollidingWithSolid = false
+                    for _, part in ipairs(partsInArea) do
+                        if part.CanCollide and part.Parent ~= character and not part.IsA("ForceField") then
+                            isCollidingWithSolid = true
+                            break
+                        end
+                    end
+                    if not isCollidingWithSolid and humanoid.Sit == false and humanoid.FloorMaterial == Enum.Material.Air then
+                        -- This condition is tricky. It attempts to catch noclip when not sitting and not on a floor.
+                        -- kickPlayer(player, "Noclip suspected")
+                        warn(player.Name .. " suspected of noclip (no solid ground/collision).")
+                    end
+                end
+                data.lastNoclipCheckTime = tick()
+            end
+
+            -- Jump Height Check (basic)
+            if humanoid.FloorMaterial == Enum.Material.Air and rootPart.AssemblyLinearVelocity.Y > MIN_Y_VELOCITY_FOR_JUMP then
+                -- Player is in the air and moving upwards significantly
+                if tick() - data.lastJumpTime > 0.5 then
+                    
+                end
+            end
+
+            
+            if humanoid.FloorMaterial == Enum.Material.Air and not data.isFalling then
+                data.isFalling = true
+                data.lastFallCheckPosition = currentPosition
+            elseif humanoid.FloorMaterial ~= Enum.Material.Air and data.isFalling then
+                data.isFalling = false
+                if data.lastFallCheckPosition then
+                    local fallDistance = (currentPosition.Y - data.lastFallCheckPosition.Y) * -1 -- Calculate vertical fall distance
+                    if fallDistance > MAX_FALL_DISTANCE and humanoid.Health == humanoid.MaxHealth then
+                        -- Player fell a large distance but took no damage.
+                        -- This is a strong indicator of fall damage bypass.
+                        -- kickPlayer(player, "Fall Damage Bypass Detected")
+                        warn(player.Name .. " suspected of fall damage bypass. Fall distance: " .. tostring(fallDistance))
+                    end
+                end
+            end
+
+            -- Humanoid properties check (Speed/JumpPower)
+           
+            if humanoid.WalkSpeed > MAX_WALK_SPEED + 0.1 then -- Add a small tolerance
+                humanoid.WalkSpeed = MAX_WALK_SPEED
+                warn(player.Name .. " attempted to set WalkSpeed to " .. tostring(humanoid.WalkSpeed) .. ". Resetting.")
+                -- kickPlayer(player, "WalkSpeed Hack Detected") -- Consider kicking if persistent
+            end
+            if humanoid.JumpPower > MAX_JUMP_HEIGHT * 10 then -- JumpPower is usually around 50, so a higher multiplier
+                humanoid.JumpPower = 50 -- Default JumpPower
+                warn(player.Name .. " attempted to set JumpPower to " .. tostring(humanoid.JumpPower) .. ". Resetting.")
+                -- kickPlayer(player, "JumpPower Hack Detected") -- Consider kicking if persistent
+            end
+        end
+    end
+end)
+
+print("Basic Anti-Cheat Script Loaded.")
